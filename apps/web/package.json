@@ -12,6 +12,7 @@
     "convex:seed": "convex dev --once --tail-logs disable --run channelChat:seed"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.4.2",
     "@slack-clone/channel-chat": "workspace:*",
     "convex": "^1.39.1",
     "next": "16.2.6",
