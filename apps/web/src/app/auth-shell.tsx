@@ -29,11 +29,11 @@ export function AuthShell({ children }: { children: ReactNode }) {
             Sign in to continue
           </h1>
           <p className="mt-2 text-sm leading-6 text-zinc-600">
-            Use your GitHub account to enter the workspace.
+            Use an approved account to enter the workspace.
           </p>
           <SignInButton mode="modal">
             <button className="mt-6 flex h-10 w-full items-center justify-center rounded-md bg-zinc-950 px-3 text-sm font-medium text-white transition-colors hover:bg-zinc-800">
-              Continue with GitHub
+              Continue to sign in
             </button>
           </SignInButton>
         </section>
