@@ -43,7 +43,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <div className="fixed right-4 top-3 z-50 rounded-md border border-zinc-200 bg-white p-1 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+      <div className="fixed right-4 top-3 z-50 rounded-md border border-zinc-200 bg-white p-1 shadow-[0_1px_0_rgba(0,0,0,0.04)] lg:hidden">
         <UserButton />
       </div>
       {children}
