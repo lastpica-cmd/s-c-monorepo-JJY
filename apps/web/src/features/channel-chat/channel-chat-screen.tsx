@@ -9,7 +9,12 @@ import {
   type Member,
   type Message,
 } from "@slack-clone/channel-chat";
+import { useMutation, useQuery } from "convex/react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
+
+const hasConvexDeployment = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
 
 function byId<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
@@ -81,74 +86,42 @@ function MessageRow({
   );
 }
 
-export function ChannelChatScreen() {
-  const repository = useMemo(() => new MockChannelChatRepository(), []);
-  const [conversation, setConversation] = useState<ChannelConversation | null>(
-    null,
+function LoadingState({ label }: { label: string }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-white text-sm text-zinc-500">
+      {label}
+    </main>
   );
-  const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] = useState(false);
+}
 
-  useEffect(() => {
-    let mounted = true;
-
-    getChannelConversation(repository, GENERAL_CHANNEL_ID).then((data) => {
-      if (mounted) {
-        setConversation(data);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [repository]);
-
+function ChannelChatView({
+  conversation,
+  draft,
+  isSending,
+  dataSourceLabel,
+  onDraftChange,
+  onSubmit,
+}: {
+  conversation: ChannelConversation;
+  draft: string;
+  isSending: boolean;
+  dataSourceLabel: string;
+  onDraftChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
   const membersById = useMemo(
-    () => byId(conversation?.members ?? []),
-    [conversation?.members],
+    () => byId(conversation.members),
+    [conversation.members],
   );
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!conversation || draft.trim().length === 0) {
-      return;
-    }
-
-    setIsSending(true);
-
-    try {
-      await sendChannelMessage(repository, {
-        channelId: conversation.channel.id,
-        authorId: conversation.currentMemberId,
-        body: draft,
-      });
-
-      const nextConversation = await getChannelConversation(
-        repository,
-        conversation.channel.id,
-      );
-      setConversation(nextConversation);
-      setDraft("");
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  if (!conversation) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-white text-sm text-zinc-500">
-        Loading channel
-      </main>
-    );
-  }
 
   return (
     <main className="flex min-h-screen bg-white text-zinc-950">
       <aside className="hidden w-64 shrink-0 border-r border-zinc-200 bg-zinc-950 p-3 text-white lg:flex lg:flex-col">
         <div className="rounded-md border border-white/10 bg-white/5 px-3 py-3">
           <div className="text-sm font-semibold">Mono Workspace</div>
-          <div className="mt-1 text-xs text-zinc-400">8 members</div>
+          <div className="mt-1 text-xs text-zinc-400">
+            {conversation.channel.memberCount} members
+          </div>
         </div>
 
         <nav className="mt-5 space-y-1">
@@ -180,7 +153,7 @@ export function ChannelChatScreen() {
                 # {conversation.channel.name}
               </h1>
               <span className="rounded-md border border-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600">
-                Mock
+                {dataSourceLabel}
               </span>
             </div>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
@@ -222,9 +195,9 @@ export function ChannelChatScreen() {
                     Welcome to #{conversation.channel.name}
                   </h2>
                   <p className="mt-1 text-sm leading-6 text-zinc-600">
-                    This slice is backed by an in-memory mock repository. The UI
-                    talks to application use cases, while domain validation owns
-                    message rules.
+                    This slice keeps domain rules separate from the data source,
+                    so mock storage and Convex persistence can be swapped
+                    without changing the core chat model.
                   </p>
                 </div>
 
@@ -250,13 +223,13 @@ export function ChannelChatScreen() {
             </div>
 
             <form
-              onSubmit={handleSubmit}
+              onSubmit={onSubmit}
               className="border-t border-zinc-200 bg-white px-3 py-3 sm:px-6"
             >
               <div className="mx-auto max-w-3xl rounded-lg border border-zinc-300 bg-white p-2 shadow-[0_1px_0_rgba(0,0,0,0.04)] focus-within:border-zinc-950">
                 <textarea
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(event) => onDraftChange(event.target.value)}
                   placeholder={`Message #${conversation.channel.name}`}
                   rows={3}
                   className="block max-h-40 min-h-20 w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-6 text-zinc-950 outline-none placeholder:text-zinc-400"
@@ -309,4 +282,127 @@ export function ChannelChatScreen() {
       </section>
     </main>
   );
+}
+
+function MockChannelChatScreen() {
+  const repository = useMemo(() => new MockChannelChatRepository(), []);
+  const [conversation, setConversation] = useState<ChannelConversation | null>(
+    null,
+  );
+  const [draft, setDraft] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getChannelConversation(repository, GENERAL_CHANNEL_ID).then((data) => {
+      if (mounted) {
+        setConversation(data);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [repository]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!conversation || draft.trim().length === 0) {
+      return;
+    }
+
+    setIsSending(true);
+
+    try {
+      await sendChannelMessage(repository, {
+        channelId: conversation.channel.id,
+        authorId: conversation.currentMemberId,
+        body: draft,
+      });
+
+      const nextConversation = await getChannelConversation(
+        repository,
+        conversation.channel.id,
+      );
+      setConversation(nextConversation);
+      setDraft("");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  if (!conversation) {
+    return <LoadingState label="Loading mock channel" />;
+  }
+
+  return (
+    <ChannelChatView
+      conversation={conversation}
+      draft={draft}
+      isSending={isSending}
+      dataSourceLabel="Mock"
+      onDraftChange={setDraft}
+      onSubmit={handleSubmit}
+    />
+  );
+}
+
+function ConvexChannelChatScreen() {
+  const conversation = useQuery(api.channelChat.getConversation);
+  const seedConversation = useMutation(api.channelChat.seed);
+  const sendMessage = useMutation(api.channelChat.send);
+  const [draft, setDraft] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    if (conversation === null) {
+      void seedConversation();
+    }
+  }, [conversation, seedConversation]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!conversation || draft.trim().length === 0) {
+      return;
+    }
+
+    setIsSending(true);
+
+    try {
+      await sendMessage({
+        channelId: conversation.channel.id as Id<"channels">,
+        authorId: conversation.currentMemberId,
+        body: draft,
+      });
+      setDraft("");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  if (conversation === undefined || conversation === null) {
+    return <LoadingState label="Loading Convex channel" />;
+  }
+
+  return (
+    <ChannelChatView
+      conversation={conversation}
+      draft={draft}
+      isSending={isSending}
+      dataSourceLabel="Convex"
+      onDraftChange={setDraft}
+      onSubmit={handleSubmit}
+    />
+  );
+}
+
+export function ChannelChatScreen() {
+  if (hasConvexDeployment) {
+    return <ConvexChannelChatScreen />;
+  }
+
+  return <MockChannelChatScreen />;
 }

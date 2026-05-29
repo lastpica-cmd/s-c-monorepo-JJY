@@ -7,7 +7,9 @@
     "dev": "turbo dev --filter=web",
     "build": "turbo build",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "convex:dev": "pnpm --filter web convex:dev",
+    "convex:seed": "pnpm --filter web convex:seed"
   },
   "devDependencies": {
     "turbo": "^2.6.1"
