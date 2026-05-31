@@ -11,6 +11,7 @@ export default defineSchema({
   members: defineTable({
     externalId: v.string(),
     displayName: v.string(),
+    email: v.optional(v.string()),
     role: v.union(v.literal("owner"), v.literal("member")),
     presence: v.union(v.literal("online"), v.literal("away"), v.literal("offline")),
     avatarInitials: v.string(),

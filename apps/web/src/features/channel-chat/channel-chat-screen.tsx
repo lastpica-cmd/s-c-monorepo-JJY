@@ -1,21 +1,15 @@
 "use client";
 
 import {
-  GENERAL_CHANNEL_ID,
-  MockChannelChatRepository,
-  getChannelConversation,
-  sendChannelMessage,
   type ChannelConversation,
   type Member,
   type Message,
 } from "@slack-clone/channel-chat";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-
-const hasConvexDeployment = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL);
 
 function byId<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
@@ -109,14 +103,12 @@ function ChannelChatView({
   conversation,
   draft,
   isSending,
-  dataSourceLabel,
   onDraftChange,
   onSubmit,
 }: {
   conversation: ChannelConversation;
   draft: string;
   isSending: boolean;
-  dataSourceLabel: string;
   onDraftChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -205,7 +197,7 @@ function ChannelChatView({
                 # {conversation.channel.name}
               </h1>
               <span className="rounded-md border border-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600">
-                {dataSourceLabel}
+                Convex
               </span>
             </div>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
@@ -247,9 +239,8 @@ function ChannelChatView({
                     Welcome to #{conversation.channel.name}
                   </h2>
                   <p className="mt-1 text-sm leading-6 text-zinc-600">
-                    This slice keeps domain rules separate from the data source,
-                    so mock storage and Convex persistence can be swapped
-                    without changing the core chat model.
+                    Messages are persisted through Convex and attributed to
+                    the signed-in Clerk member.
                   </p>
                 </div>
 
@@ -336,88 +327,36 @@ function ChannelChatView({
   );
 }
 
-function MockChannelChatScreen() {
-  const repository = useMemo(() => new MockChannelChatRepository(), []);
-  const [conversation, setConversation] = useState<ChannelConversation | null>(
-    null,
-  );
-  const [draft, setDraft] = useState("");
-  const [isSending, setIsSending] = useState(false);
+export function ChannelChatScreen() {
+  const { user } = useUser();
+  const currentUser = useMemo(() => {
+    if (!user) {
+      return null;
+    }
 
-  useEffect(() => {
-    let mounted = true;
-
-    getChannelConversation(repository, GENERAL_CHANNEL_ID).then((data) => {
-      if (mounted) {
-        setConversation(data);
-      }
-    });
-
-    return () => {
-      mounted = false;
+    return {
+      externalId: user.id,
+      displayName:
+        user.fullName ??
+        user.username ??
+        user.primaryEmailAddress?.emailAddress ??
+        "Signed in user",
+      email: user.primaryEmailAddress?.emailAddress,
     };
-  }, [repository]);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!conversation || draft.trim().length === 0) {
-      return;
-    }
-
-    setIsSending(true);
-
-    try {
-      await sendChannelMessage(repository, {
-        channelId: conversation.channel.id,
-        authorId: conversation.currentMemberId,
-        body: draft,
-      });
-
-      const nextConversation = await getChannelConversation(
-        repository,
-        conversation.channel.id,
-      );
-      setConversation(nextConversation);
-      setDraft("");
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  if (!conversation) {
-    return <LoadingState label="Loading mock channel" />;
-  }
-
-  return (
-    <ChannelChatView
-      conversation={conversation}
-      draft={draft}
-      isSending={isSending}
-      dataSourceLabel="Mock"
-      onDraftChange={setDraft}
-      onSubmit={handleSubmit}
-    />
+  }, [user]);
+  const conversation = useQuery(
+    api.channelChat.getConversation,
+    currentUser ? { currentUser } : "skip",
   );
-}
-
-function ConvexChannelChatScreen() {
-  const conversation = useQuery(api.channelChat.getConversation);
   const seedConversation = useMutation(api.channelChat.seed);
   const sendMessage = useMutation(api.channelChat.send);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  useEffect(() => {
-    if (conversation === null) {
-      void seedConversation();
-    }
-  }, [conversation, seedConversation]);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!conversation || draft.trim().length === 0) {
+    if (!conversation || !currentUser || draft.trim().length === 0) {
       return;
     }
 
@@ -426,7 +365,7 @@ function ConvexChannelChatScreen() {
     try {
       await sendMessage({
         channelId: conversation.channel.id as Id<"channels">,
-        authorId: conversation.currentMemberId,
+        currentUser,
         body: draft,
       });
       setDraft("");
@@ -435,8 +374,34 @@ function ConvexChannelChatScreen() {
     }
   }
 
-  if (conversation === undefined || conversation === null) {
+  async function handleSeed() {
+    await seedConversation();
+  }
+
+  if (!currentUser || conversation === undefined) {
     return <LoadingState label="Loading Convex channel" />;
+  }
+
+  if (conversation === null) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-white px-6 text-zinc-950">
+        <section className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 text-center shadow-[0_1px_0_rgba(0,0,0,0.04)]">
+          <h1 className="text-xl font-semibold tracking-tight">
+            Channel data is empty
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-600">
+            Seed the Convex development database to create the general channel.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleSeed()}
+            className="mt-6 h-10 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+          >
+            Seed channel
+          </button>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -444,17 +409,8 @@ function ConvexChannelChatScreen() {
       conversation={conversation}
       draft={draft}
       isSending={isSending}
-      dataSourceLabel="Convex"
       onDraftChange={setDraft}
       onSubmit={handleSubmit}
     />
   );
-}
-
-export function ChannelChatScreen() {
-  if (hasConvexDeployment) {
-    return <ConvexChannelChatScreen />;
-  }
-
-  return <MockChannelChatScreen />;
 }
